@@ -61,10 +61,7 @@ class WorkflowNodes:
                 content = response
             else:
                 content = response.content if hasattr(response, 'content') else str(response)
-            # content = response.content
             
-            # # Parse response
-            # content = response.content[0].text
             
             # Try to extract JSON
             try:
