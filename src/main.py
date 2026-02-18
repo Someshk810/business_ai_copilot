@@ -5,13 +5,16 @@ Main entry point for the Business AI Copilot.
 import logging
 from typing import Optional
 
-from config.settings import ANTHROPIC_API_KEY, JIRA_URL
+from config.settings import GOOGLE_API_KEY, JIRA_URL
 from src.utils.logging_config import setup_logging
 from src.integrations.jira_client import JiraClient
 from src.integrations.vector_db import VectorDatabase
 from src.tools.project_status import ProjectStatusTool
 from src.tools.knowledge_search import KnowledgeSearchTool
 from src.tools.email_composer import EmailComposerTool
+from src.tools.calender_manager import CalendarManagerTool
+from src.tools.task_manager import TaskManagerTool
+from src.tools.priority_planner import PriorityPlannerTool
 from src.agent.orchestrator import AgentOrchestrator
 
 # Setup logging
@@ -23,14 +26,14 @@ class BusinessCopilot:
     """
     Main Business AI Copilot application.
     """
-    
+
     def __init__(self):
         """Initialize the copilot with all dependencies."""
         logger.info("Initializing Business AI Copilot...")
         
         # Check required configuration
-        if not ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY not set in environment")
+        if not GOOGLE_API_KEY:
+            raise ValueError("GOOGLE_API_KEY not set in environment")
         
         # Initialize integrations
         self.jira_client = None
@@ -41,23 +44,23 @@ class BusinessCopilot:
             except Exception as e:
                 logger.warning(f"Jira integration failed: {str(e)}")
         
-        self.vector_db = None
-        try:
-            self.vector_db = VectorDatabase()
-            logger.info("Vector database initialized")
-        except Exception as e:
-            logger.warning(f"Vector database initialization failed: {str(e)}")
+        self.vector_db = VectorDatabase()
+        logger.info("Vector database initialized")
         
         # Initialize tools
         self.tools = {}
         
+        # Original tools
         if self.jira_client:
             self.tools['get_project_status'] = ProjectStatusTool(self.jira_client)
         
-        if self.vector_db:
-            self.tools['knowledge_search'] = KnowledgeSearchTool(self.vector_db)
-        
+        self.tools['knowledge_search'] = KnowledgeSearchTool(self.vector_db)
         self.tools['compose_email'] = EmailComposerTool()
+        
+        # NEW: Priority planning tools
+        self.tools['manage_calendar'] = CalendarManagerTool()
+        self.tools['manage_tasks'] = TaskManagerTool(self.jira_client)
+        self.tools['create_priority_plan'] = PriorityPlannerTool()
         
         logger.info(f"Initialized {len(self.tools)} tools")
         

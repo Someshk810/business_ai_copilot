@@ -1,14 +1,17 @@
+
+
 """
-Email composition tool using Claude.
+Email composition tool using Google Gemini.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 import json
 
 from .base import BaseTool
-from anthropic import Anthropic
-from config.settings import ANTHROPIC_API_KEY, DEFAULT_MODEL
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
+from config.settings import GOOGLE_API_KEY, DEFAULT_MODEL
 from config.prompts import EMAIL_COMPOSITION_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -24,7 +27,12 @@ class EmailComposerTool(BaseTool):
             name="compose_email",
             description="Draft professional emails with appropriate tone and structure"
         )
-        self.client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        self.llm = ChatGoogleGenerativeAI(
+            model=DEFAULT_MODEL,
+            google_api_key=GOOGLE_API_KEY,
+            temperature=0.3,
+            max_output_tokens=2000
+        )
         self.cache_ttl = 0  # Don't cache email compositions
     
     def _execute(
@@ -70,22 +78,19 @@ class EmailComposerTool(BaseTool):
             include_action_items=include_action_items
         )
         
-        # Call Claude
+        # Call Gemini
         try:
-            response = self.client.messages.create(
-                model=DEFAULT_MODEL,
-                max_tokens=2000,
-                temperature=0.3,  # Lower for consistent formatting
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
-            )
+            messages = [HumanMessage(content=prompt)]
+            response = self.llm.invoke(messages)
             
-            # Parse response
-            content = response.content[0].text
+            # Handle response - LangChain returns AIMessage object
+            if hasattr(response, 'content'):
+                content = response.content
+            else:
+                content = str(response)
+            
+            logger.debug(f"LLM response type: {type(response)}")
+            logger.debug(f"Content preview: {content[:200]}")
             
             # Try to parse as JSON
             try:
@@ -97,8 +102,29 @@ class EmailComposerTool(BaseTool):
                     json_end = content.find("```", json_start)
                     json_str = content[json_start:json_end].strip()
                     email_data = json.loads(json_str)
+                elif "```" in content:
+                    # Try without json marker
+                    json_start = content.find("```") + 3
+                    json_end = content.find("```", json_start)
+                    json_str = content[json_start:json_end].strip()
+                    email_data = json.loads(json_str)
                 else:
-                    raise ValueError("Could not parse email response as JSON")
+                    # Fallback: create basic structure
+                    logger.warning("Could not parse JSON, creating basic email structure")
+                    email_data = {
+                        'subject': f"Update: {purpose}",
+                        'body': content
+                    }
+            
+            # Validate required fields
+            if 'subject' not in email_data or 'body' not in email_data:
+                logger.error(f"Missing required fields. Keys: {email_data.keys()}")
+                return {
+                    'error': 'missing_fields',
+                    'message': 'Email response missing subject or body',
+                    'subject': email_data.get('subject', 'Status Update'),
+                    'body': email_data.get('body', content)
+                }
             
             # Add metadata
             email_data['metadata'] = {
@@ -107,13 +133,14 @@ class EmailComposerTool(BaseTool):
                 'recipients_count': len(recipients) if recipients else 0
             }
             
+            logger.info(f"Email composed successfully: {email_data['subject'][:50]}")
             return email_data
             
         except Exception as e:
-            logger.error(f"Email composition failed: {str(e)}")
+            logger.error(f"Email composition failed: {str(e)}", exc_info=True)
             return {
                 'error': 'composition_failed',
                 'message': f"Failed to compose email: {str(e)}",
-                'subject': '',
-                'body': ''
+                'subject': f'Update: {purpose}',
+                'body': f"Email composition encountered an error. Key points:\n\n{key_points_text}"
             }

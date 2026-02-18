@@ -12,11 +12,10 @@ load_dotenv()
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Anthropic Configuration
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "claude-sonnet-4-5-20250929")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gemini-2.5-flash")
 DEFAULT_TEMPERATURE = float(os.getenv("DEFAULT_TEMPERATURE", "0.1"))
-MAX_TOKENS = int(os.getenv("MAX_TOKENS", "4096"))
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8192"))
 
 # Jira Configuration
 JIRA_URL = os.getenv("JIRA_URL")

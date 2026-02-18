@@ -3,7 +3,7 @@ Example usage of the Business AI Copilot.
 """
 
 from src.main import BusinessCopilot
-from src.main
+
 
 
 def main():

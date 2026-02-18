@@ -26,11 +26,14 @@ class AgentOrchestrator:
         """
         self.tools = tools
         self.nodes = WorkflowNodes(tools)
-        self.workflow = self._build_workflow()
+        
+        # Build both workflows
+        self.status_email_workflow = self._build_status_email_workflow()
+        self.priority_plan_workflow = self._build_priority_plan_workflow()
     
-    def _build_workflow(self) -> StateGraph:
+    def _build_status_email_workflow(self) -> StateGraph:
         """
-        Build the LangGraph workflow.
+        Build the status email workflow.
         
         Returns:
             Compiled workflow graph
@@ -43,7 +46,7 @@ class AgentOrchestrator:
         workflow.add_node("fetch_project_status", self.nodes.fetch_project_status)
         workflow.add_node("search_stakeholders", self.nodes.search_stakeholders)
         workflow.add_node("compose_email", self.nodes.compose_email)
-        workflow.add_node("generate_response", self.nodes.generate_response)
+        workflow.add_node("generate_plan_response", self.nodes.generate_plan_response)
         workflow.add_node("handle_error", self.nodes.handle_error)
         
         # Define edges (workflow flow)
@@ -65,19 +68,19 @@ class AgentOrchestrator:
             # If critical errors, go to error handler
             if len(errors) > 2:
                 return "handle_error"
-            return "generate_response"
+            return "generate_plan_response"
         
         workflow.add_conditional_edges(
             "compose_email",
             should_handle_error,
             {
-                "generate_response": "generate_response",
+                "generate_plan_response": "generate_plan_response",
                 "handle_error": "handle_error"
             }
         )
         
         # Both response and error handling end the workflow
-        workflow.add_edge("generate_response", END)
+        workflow.add_edge("generate_plan_response", END)
         workflow.add_edge("handle_error", END)
         
         # Compile workflow
@@ -86,9 +89,60 @@ class AgentOrchestrator:
         logger.info("Workflow compiled successfully")
         return compiled
     
+    def _build_priority_plan_workflow(self) -> StateGraph:
+        """
+        Build workflow for creating daily priority plan.
+        
+        Returns:
+            Compiled workflow graph
+        """
+        workflow = StateGraph(AgentState)
+        
+        # Add nodes
+        workflow.add_node("parse_intent", self.nodes.parse_intent)
+        workflow.add_node("get_calendar_data", self.nodes.get_calendar_data)
+        workflow.add_node("get_user_tasks", self.nodes.get_user_tasks)
+        workflow.add_node("create_priority_plan", self.nodes.create_priority_plan)
+        workflow.add_node("generate_plan_response", self.nodes.generate_plan_response)
+        workflow.add_node("handle_error", self.nodes.handle_error)
+        
+        # Define workflow
+        workflow.set_entry_point("parse_intent")
+        
+        # After intent, fetch calendar and tasks in parallel
+        # Note: LangGraph doesn't have true parallel execution in this simple form,
+        # but these could be run concurrently in production
+        workflow.add_edge("parse_intent", "get_calendar_data")
+        workflow.add_edge("get_calendar_data", "get_user_tasks")
+        
+        # After both data sources retrieved, create plan
+        workflow.add_edge("get_user_tasks", "create_priority_plan")
+        
+        # After plan created, generate response
+        def should_handle_error(state: AgentState) -> str:
+            errors = state.get('tool_errors', [])
+            if len(errors) > 2:
+                return "handle_error"
+            return "generate_plan_response"
+        
+        workflow.add_conditional_edges(
+            "create_priority_plan",
+            should_handle_error,
+            {
+                "generate_plan_response": "generate_plan_response",
+                "handle_error": "handle_error"
+            }
+        )
+        
+        # End workflow
+        workflow.add_edge("generate_plan_response", END)
+        workflow.add_edge("handle_error", END)
+        
+        return workflow.compile()
+    
     def run(self, user_query: str, user_context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Run the workflow for a user query.
+        Run the appropriate workflow based on query.
         
         Args:
             user_query: User's request
@@ -99,20 +153,27 @@ class AgentOrchestrator:
         """
         logger.info(f"Running workflow for query: {user_query}")
         
+        # Determine which workflow to use
+        query_lower = user_query.lower()
+        
+        if any(keyword in query_lower for keyword in ['priority', 'plan', 'schedule', 'today']):
+            workflow = self.priority_plan_workflow
+            logger.info("Using priority plan workflow")
+        else:
+            workflow = self.status_email_workflow
+            logger.info("Using status + email workflow")
+        
         # Create initial state
         initial_state = create_initial_state(user_query, user_context)
         
         # Execute workflow
         try:
-            final_state = self.workflow.invoke(initial_state)
-            
+            final_state = workflow.invoke(initial_state)
             logger.info("Workflow completed successfully")
             return final_state
             
         except Exception as e:
             logger.error(f"Workflow execution failed: {str(e)}", exc_info=True)
-            
-            # Return error state
             return {
                 'user_query': user_query,
                 'final_response': f"I encountered an unexpected error: {str(e)}",
