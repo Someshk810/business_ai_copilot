@@ -46,7 +46,7 @@ class AgentOrchestrator:
         workflow.add_node("fetch_project_status", self.nodes.fetch_project_status)
         workflow.add_node("search_stakeholders", self.nodes.search_stakeholders)
         workflow.add_node("compose_email", self.nodes.compose_email)
-        workflow.add_node("generate_plan_response", self.nodes.generate_plan_response)
+        workflow.add_node("generate_email_status_response", self.nodes.generate_email_status_response)
         workflow.add_node("handle_error", self.nodes.handle_error)
         
         # Define edges (workflow flow)
@@ -68,19 +68,19 @@ class AgentOrchestrator:
             # If critical errors, go to error handler
             if len(errors) > 2:
                 return "handle_error"
-            return "generate_plan_response"
+            return "generate_email_status_response"
         
         workflow.add_conditional_edges(
             "compose_email",
             should_handle_error,
             {
-                "generate_plan_response": "generate_plan_response",
+                "generate_email_status_response": "generate_email_status_response",
                 "handle_error": "handle_error"
             }
         )
         
         # Both response and error handling end the workflow
-        workflow.add_edge("generate_plan_response", END)
+        workflow.add_edge("generate_email_status_response", END)
         workflow.add_edge("handle_error", END)
         
         # Compile workflow

@@ -92,25 +92,51 @@ class EmailComposerTool(BaseTool):
             logger.debug(f"LLM response type: {type(response)}")
             logger.debug(f"Content preview: {content[:200]}")
             
-            # Try to parse as JSON
+            # Try multiple parsing strategies
+            email_data = None
+            
+            # Strategy 1: Direct JSON parse
             try:
                 email_data = json.loads(content)
             except json.JSONDecodeError:
-                # Extract from markdown code blocks if present
-                if "```json" in content:
-                    json_start = content.find("```json") + 7
+                pass
+            
+            # Strategy 2: Extract from markdown code blocks
+            if not email_data and "```" in content:
+                try:
+                    # Try ```json first
+                    if "```json" in content:
+                        json_start = content.find("```json") + 7
+                    else:
+                        json_start = content.find("```") + 3
+                    
                     json_end = content.find("```", json_start)
-                    json_str = content[json_start:json_end].strip()
-                    email_data = json.loads(json_str)
-                elif "```" in content:
-                    # Try without json marker
-                    json_start = content.find("```") + 3
-                    json_end = content.find("```", json_start)
-                    json_str = content[json_start:json_end].strip()
-                    email_data = json.loads(json_str)
+                    if json_end > json_start:
+                        json_str = content[json_start:json_end].strip()
+                        email_data = json.loads(json_str)
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.debug(f"Markdown block parsing failed: {e}")
+            
+            # Strategy 3: Manual extraction as fallback
+            if not email_data:
+                logger.warning("JSON parsing failed, using regex extraction")
+                import re
+                
+                # Try to extract subject and body using patterns
+                subject_match = re.search(r'["\']subject["\']\s*:\s*["\']([^"\']+)["\']', content, re.IGNORECASE)
+                body_match = re.search(r'["\']body["\']\s*:\s*["\']([^"\']+)["\']', content, re.IGNORECASE | re.DOTALL)
+                
+                if not subject_match or not body_match:
+                    # Try multiline body with triple quotes
+                    body_match = re.search(r'["\']body["\']\s*:\s*"""([^"]+?)"""', content, re.DOTALL)
+                
+                if subject_match:
+                    email_data = {
+                        'subject': subject_match.group(1),
+                        'body': body_match.group(1) if body_match else content
+                    }
                 else:
-                    # Fallback: create basic structure
-                    logger.warning("Could not parse JSON, creating basic email structure")
+                    # Last resort: use content as body
                     email_data = {
                         'subject': f"Update: {purpose}",
                         'body': content

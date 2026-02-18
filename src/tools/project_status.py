@@ -26,6 +26,101 @@ class ProjectStatusTool(BaseTool):
         self.jira_client = jira_client
         self.cache_ttl = 300  # 5 minutes for project status
     
+    def _generate_demo_data(self, project_id: str) -> Dict[str, Any]:
+        """Generate realistic demo data for projects not in Jira."""
+        logger.info(f"Generating demo data for project: {project_id}")
+        
+        from datetime import datetime, timedelta
+        
+        # Create realistic demo data
+        return {
+            'success': True,
+            'project_name': f"Project {project_id.title()}",
+            'project_key': project_id.upper()[:3],
+            'project_id': 'demo-' + project_id.lower(),
+            'status': 'on_track',
+            'completion_percentage': 67.5,
+            'sprint_info': {
+                'sprint_id': 'demo-sprint-1',
+                'sprint_name': 'Sprint 23',
+                'start_date': (datetime.now() - timedelta(days=7)).isoformat(),
+                'end_date': (datetime.now() + timedelta(days=7)).isoformat(),
+                'state': 'active',
+                'completed_points': 18,
+                'total_points': 25
+            },
+            'metrics': {
+                'total_tasks': 24,
+                'completed_tasks': 16,
+                'in_progress_tasks': 5,
+                'blocked_tasks': 1,
+                'todo_tasks': 2,
+                'completion_percentage': 67.5,
+                'story_points': {
+                    'total': 58,
+                    'completed': 39,
+                    'remaining': 19
+                }
+            },
+            'blockers': [
+                {
+                    'task_id': 'DEMO-123',
+                    'task_title': 'API Integration with Payment Gateway',
+                    'severity': 'high',
+                    'blocked_since': (datetime.now() - timedelta(days=3)).isoformat(),
+                    'blocker_reason': 'Waiting on vendor API credentials',
+                    'owner': 'Sarah Chen',
+                    'status': 'Blocked'
+                }
+            ],
+            'tasks': [
+                {
+                    'id': 'DEMO-120',
+                    'title': 'Implement user authentication flow',
+                    'status': 'Done',
+                    'assignee': 'Alex Thompson',
+                    'priority': 'High',
+                    'story_points': 5
+                },
+                {
+                    'id': 'DEMO-121',
+                    'title': 'Design dashboard mockups',
+                    'status': 'Done',
+                    'assignee': 'Maria Garcia',
+                    'priority': 'Medium',
+                    'story_points': 3
+                },
+                {
+                    'id': 'DEMO-122',
+                    'title': 'Set up CI/CD pipeline',
+                    'status': 'In Progress',
+                    'assignee': 'John Smith',
+                    'priority': 'High',
+                    'story_points': 8
+                },
+                {
+                    'id': 'DEMO-123',
+                    'title': 'API Integration with Payment Gateway',
+                    'status': 'Blocked',
+                    'assignee': 'Sarah Chen',
+                    'priority': 'Critical',
+                    'story_points': 13
+                },
+                {
+                    'id': 'DEMO-124',
+                    'title': 'Write API documentation',
+                    'status': 'In Progress',
+                    'assignee': 'David Lee',
+                    'priority': 'Medium',
+                    'story_points': 3
+                }
+            ],
+            'last_updated': datetime.now().isoformat(),
+            'data_source': 'demo',
+            'demo_mode': True,
+            'note': 'This is demo data. Configure Jira connection to see real project data.'
+        }
+    
     @retry_on_failure(max_retries=3, delay=1.0)
     def _execute(
         self,
@@ -51,11 +146,9 @@ class ProjectStatusTool(BaseTool):
         # Find project
         project = self.jira_client.find_project(project_id)
         if not project:
-            return {
-                'error': 'project_not_found',
-                'message': f"Project '{project_id}' not found",
-                'suggestions': self.jira_client.get_project_suggestions(project_id)
-            }
+            # Return demo data instead of error for better demo experience
+            logger.warning(f"Project '{project_id}' not found in Jira, using demo data")
+            return self._generate_demo_data(project_id)
         
         # Get active sprint if needed
         sprint_id = None
@@ -91,6 +184,7 @@ class ProjectStatusTool(BaseTool):
         formatted_tasks = [self._format_task(task) for task in tasks] if include_tasks else []
         
         return {
+            'success': True,
             'project_name': project['name'],
             'project_key': project['key'],
             'project_id': str(project['id']),

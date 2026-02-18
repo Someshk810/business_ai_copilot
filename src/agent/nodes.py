@@ -68,12 +68,6 @@ class WorkflowNodes:
             
             # Try to extract JSON
             try:
-                # if "```json" in content:
-                #     json_start = content.find("```json") + 7
-                #     json_end = content.find("```", json_start)
-                #     json_str = content[json_start:json_end].strip()
-                #     intent_data = json.loads(json_str)
-                # else:
                 intent_data = json.loads(content)
             except json.JSONDecodeError:
                 logger.warning("Could not parse intent as JSON, using basic analysis")
@@ -318,6 +312,129 @@ class WorkflowNodes:
         state['step'] = 'email_composed'
         return state
     
+    def generate_email_status_response(self, state: AgentState) -> AgentState:
+        """
+        Generate final response for status + email workflow.
+        
+        Args:
+            state: Current agent state
+            
+        Returns:
+            Updated state with final response
+        """
+        logger.info("Node: generate_email_status_response")
+        
+        try:
+            # Get data from previous steps
+            project_status = state.get('project_status', {})
+            email_draft = state.get('email_draft', {})
+            stakeholders = state.get('stakeholders', [])
+            
+            response_parts = []
+            response_parts.append("# 📊 Project Status & Email Update\n")
+            
+            # Project Status Section
+            response_parts.append("## 🚀 Project Status\n")
+            
+            # Check if we have an error response (no 'error' key means success)
+            if project_status and 'error' not in project_status:
+                project_name = project_status.get('project_name', 'Unknown Project')
+                completion = project_status.get('completion_percentage', 0)
+                status = project_status.get('status', 'unknown').replace('_', ' ').title()
+                metrics = project_status.get('metrics', {})
+                is_demo = project_status.get('demo_mode', False)
+                
+                # Add demo indicator if using demo data
+                if is_demo:
+                    response_parts.append("*🎭 Demo Mode: Showing sample data (Jira project not found)*\n")
+                
+                response_parts.append(f"**Project:** {project_name}")
+                response_parts.append(f"**Status:** {status}")
+                response_parts.append(f"**Completion:** {completion}%")
+                response_parts.append(f"**Tasks:** {metrics.get('completed_tasks', 0)}/{metrics.get('total_tasks', 0)} completed\n")
+                
+                # Blockers
+                blockers = project_status.get('blockers', [])
+                if blockers:
+                    response_parts.append("### ⚠️ Blockers\n")
+                    for blocker in blockers[:5]:
+                        response_parts.append(
+                            f"- **{blocker.get('severity', 'medium').upper()}**: {blocker.get('task_title', 'Unknown')} "
+                            f"(Owner: {blocker.get('owner', 'Unassigned')})"
+                        )
+                    response_parts.append("")
+                
+                # Sprint info
+                sprint_info = project_status.get('sprint_info', {})
+                if sprint_info:
+                    response_parts.append("### 📅 Current Sprint\n")
+                    response_parts.append(f"**Sprint:** {sprint_info.get('sprint_name', 'Current')}")
+                    response_parts.append(f"**Progress:** {sprint_info.get('completed_points', 0)}/{sprint_info.get('total_points', 0)} points")
+                    response_parts.append("")
+            else:
+                # Show error message with helpful context
+                error_msg = project_status.get('message', 'Unknown error') if project_status else 'No data available'
+                response_parts.append(f"⚠️ Could not retrieve project status from Jira")
+                response_parts.append(f"**Error:** {error_msg}")
+                
+                # Show suggestions if available
+                suggestions = project_status.get('suggestions', []) if project_status else []
+                if suggestions:
+                    response_parts.append(f"\n**Available projects:** {', '.join(suggestions)}")
+                response_parts.append("\n*Note: This is a demo system. To see real data, configure Jira with actual project details.*\n")
+            
+            # Email Draft Section
+            response_parts.append("## 📧 Email Draft\n")
+            
+            if email_draft and not email_draft.get('error'):
+                subject = email_draft.get('subject', 'No subject')
+                body = email_draft.get('body', 'No content')
+                
+                if len(stakeholders) > 3:
+                    response_parts.append(f"**To:** {', '.join(s.get('name', 'Unknown') for s in stakeholders[:3])} and {len(stakeholders) - 3} others")
+                elif stakeholders:
+                    response_parts.append(f"**To:** {', '.join(s.get('name', 'Unknown') for s in stakeholders)}")
+                else:
+                    response_parts.append("**To:** Project Stakeholders")
+                    
+                response_parts.append(f"**Subject:** {subject}\n")
+                response_parts.append("**Body:**")
+                response_parts.append("```")
+                response_parts.append(body)
+                response_parts.append("```\n")
+            else:
+                response_parts.append("⚠️ Email composition encountered an error")
+                if email_draft:
+                    response_parts.append(f"Error: {email_draft.get('message', 'Unknown error')}")
+                    # Show fallback if available
+                    if email_draft.get('subject') and email_draft.get('body'):
+                        response_parts.append("\n**Fallback Draft:**")
+                        response_parts.append(f"**Subject:** {email_draft.get('subject')}")
+                        response_parts.append(f"**Body:** {email_draft.get('body')}")
+                response_parts.append("")
+            
+            # Next steps
+            response_parts.append("## ⚡ Next Steps\n")
+            response_parts.append("• Review and edit the email draft")
+            response_parts.append("• Send to stakeholders")
+            response_parts.append("• Address blocking issues")
+            response_parts.append("• Schedule follow-up")
+            
+            final_response = "\n".join(response_parts)
+            
+            state['final_response'] = final_response
+            state['should_end'] = True
+            state['end_time'] = datetime.now()
+            
+            logger.info("Email status response generated")
+        
+        except Exception as e:
+            logger.error(f"Response generation failed: {str(e)}", exc_info=True)
+            state['final_response'] = f"I encountered an error while creating the response: {str(e)}"
+            state['should_end'] = True
+        
+        return state
+    
     def generate_response(self, state: AgentState) -> AgentState:
         """
         Generate final response to user.
@@ -473,66 +590,7 @@ class WorkflowNodes:
         
         state['step'] = 'calendar_retrieved'
         return state
-    
-    # def get_user_tasks(self, state: AgentState) -> AgentState:
-    #     """
-    #     Retrieve user's open tasks.
-        
-    #     Args:
-    #         state: Current agent state
-            
-    #     Returns:
-    #         Updated state with task data
-    #     """
-    #     logger.info("Node: get_user_tasks")
-        
-    #     try:
-    #         # Get user context
-    #         user_context = state.get('user_context', {})
-    #         user_email = user_context.get('user_email', 'john.doe@company.com')
-            
-    #         # Call task manager tool
-    #         task_tool = self.tools.get('manage_tasks')
-    #         if not task_tool:
-    #             raise ValueError("Task manager tool not available")
-            
-    #         result = task_tool.execute(
-    #             action='get_my_tasks',
-    #             user_email=user_email,
-    #             filters={'status': ['todo', 'in_progress']},
-    #             sort_by='due_date'
-    #         )
-            
-    #         # Store result
-    #         state['user_tasks'] = result
-    #         state['tool_outputs']['manage_tasks'] = result
-    #         state['tools_called'].append('manage_tasks')
-            
-    #         if result.get('success'):
-    #             task_count = result.get('total_count', 0)
-    #             logger.info(f"Retrieved {task_count} open tasks")
-    #         else:
-    #             logger.warning("Task retrieval failed")
-    #             state['tool_errors'].append({
-    #                 'tool': 'manage_tasks',
-    #                 'error': result.get('message', 'Unknown error')
-    #             })
-        
-    #     except Exception as e:
-    #         logger.error(f"Task retrieval failed: {str(e)}", exc_info=True)
-    #         state['tool_errors'].append({
-    #             'step': 'get_user_tasks',
-    #             'error': str(e)
-    #         })
-    #         # Use empty task list as fallback
-    #         state['user_tasks'] = {
-    #             'success': True,
-    #             'tasks': [],
-    #             'total_count': 0
-    #         }
-        
-    #     state['step'] = 'tasks_retrieved'
-    #     return state
+
 
     def get_user_tasks(self, state: AgentState) -> AgentState:
         """
@@ -625,26 +683,46 @@ class WorkflowNodes:
             
             # Debug: Log what we received
             logger.debug(f"Calendar data type: {type(calendar_data)}")
+            logger.debug(f"Calendar data content: {calendar_data}")
             logger.debug(f"Task data type: {type(task_data)}")
             logger.debug(f"Task data keys: {task_data.keys() if isinstance(task_data, dict) else 'not a dict'}")
+            logger.debug(f"Task data content: {task_data}")
             
             # Extract tasks and calendar info with validation
+            tasks = []
             if isinstance(task_data, dict):
                 tasks = task_data.get('tasks', [])
+                logger.debug(f"Extracted {len(tasks)} tasks from task_data")
+                if tasks:
+                    logger.debug(f"First task: {tasks[0]}")
             else:
                 logger.warning(f"task_data is not a dict, it's: {type(task_data)}")
-                tasks = []
             
+            events = []
+            free_blocks = []
             if isinstance(calendar_data, dict):
                 events = calendar_data.get('events', [])
                 free_blocks = calendar_data.get('free_blocks', [])
+                logger.debug(f"Extracted {len(events)} events and {len(free_blocks)} free blocks")
+                if events:
+                    logger.debug(f"First event: {events[0]}")
             else:
                 logger.warning(f"calendar_data is not a dict, it's: {type(calendar_data)}")
-                events = []
-                free_blocks = []
             
             # Log counts
             logger.info(f"Processing {len(tasks)} tasks, {len(events)} events, {len(free_blocks)} free blocks")
+            
+            # Verify data is actually present
+            if len(tasks) == 0:
+                logger.error(f"No tasks extracted! State user_tasks: {state.get('user_tasks')}")
+            if len(events) == 0:
+                logger.warning(f"No events extracted! State calendar_data: {state.get('calendar_data')}")
+            
+            # Verify data is actually present
+            if len(tasks) == 0:
+                logger.error(f"No tasks extracted! State user_tasks: {state.get('user_tasks')}")
+            if len(events) == 0:
+                logger.warning(f"No events extracted! State calendar_data: {state.get('calendar_data')}")
             
             # Get user preferences
             user_preferences = user_context.get('preferences', {

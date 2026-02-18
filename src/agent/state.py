@@ -34,6 +34,9 @@ class AgentState(TypedDict):
     project_status: Optional[Dict[str, Any]]
     stakeholders: Optional[list]
     email_draft: Optional[Dict[str, Any]]
+    calendar_data: Optional[Dict[str, Any]]
+    user_tasks: Optional[Dict[str, Any]]
+    priority_plan: Optional[Dict[str, Any]]
     
     # Planning and reasoning
     intent_analysis: Optional[Dict[str, Any]]
@@ -80,6 +83,9 @@ def create_initial_state(user_query: str, user_context: Dict[str, Any] = None) -
         project_status=None,
         stakeholders=None,
         email_draft=None,
+        calendar_data=None,
+        user_tasks=None,
+        priority_plan=None,
         intent_analysis=None,
         execution_plan=None,
         validation_results=None,

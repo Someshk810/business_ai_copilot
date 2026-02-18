@@ -76,10 +76,13 @@ Requirements:
 - Use professional formatting
 - Highlight critical issues appropriately
 
-Return ONLY a JSON object with:
+IMPORTANT: Return ONLY a valid JSON object. Use \\n for line breaks in the body text.
+Do NOT use markdown formatting or code blocks - just raw JSON.
+
+Format:
 {{
     "subject": "Email subject line",
-    "body": "Full email body with proper formatting"
+    "body": "Full email body with proper formatting. Use \\n for new lines. Escape quotes with \\\" if needed."
 }}
 """
 
